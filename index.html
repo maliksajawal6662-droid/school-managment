@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>School Management SaaS Pro – accounts (offline demo)</title>
+<style>
+:root{--bg:#06122b;--panel:#0d1f42;--p2:#12295a;--text:#e8f0ff;--mute:#9db0d3;--line:#223a6e;--blue:#3d86ff;--cyan:#27d3f2;--bad:#fb7185;--ok:#34d399}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,"Noto Naskh Arabic",sans-serif}
+button,input,select{font:inherit;color:inherit}:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+button{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}button:disabled{opacity:.5}
+button.pri{background:var(--blue);border-color:var(--blue);color:#fff}
+.banner{background:var(--p2);border-bottom:1px dashed var(--cyan);padding:8px 14px;font-size:13px;color:var(--mute)}
+.wrap{max-width:440px;margin:6vh auto;padding:0 16px}h1{font-size:22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:14px}
+label{display:block;margin-bottom:12px;font-size:13px;color:var(--mute)}label input:not([type=checkbox]){width:100%}.chk{display:flex;gap:8px;align-items:center;color:var(--text)}
+.pw{display:flex;gap:6px}.pw input{flex:1}.err{color:var(--bad);min-height:20px}.ok{color:var(--ok);min-height:20px}
+.links{display:flex;gap:14px;flex-wrap:wrap}.links button,.lang{border:0;background:none;color:var(--cyan);padding:0;text-decoration:underline}
+.lang{position:fixed;top:40px;inset-inline-end:14px}
+.app{max-width:980px;margin:18px auto;padding:0 16px}.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.bar b{flex:1}
+table{width:100%;border-collapse:collapse}th,td{text-align:start;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--mute);font-weight:500;font-size:13px}
+.tw{overflow-x:auto}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.mail{border-bottom:1px solid var(--line);padding:8px 0;white-space:pre-wrap;word-break:break-all;font-size:13px}
+a{color:var(--cyan);cursor:pointer}
+</style>
+</head>
+<body>
+<div class="banner" id="banner" role="note"></div>
+<button class="lang" id="lang"></button>
+<div id="root"></div>
+<script>
+// Offline demo: accounts live in THIS browser only (localStorage). No server, no real email. Passwords are hashed with PBKDF2 (Web Crypto).
+const K='sms_accounts_demo_v1';
+const $=s=>document.querySelector(s);
+const h=(t,a={},...c)=>{const e=document.createElement(t);for(const k in a){if(k.startsWith('on'))e.addEventListener(k.slice(2),a[k]);else if(a[k]!=null&&a[k]!==false)e.setAttribute(k,a[k])}for(const x of c.flat())if(x!=null)e.append(x.nodeType?x:document.createTextNode(x));return e};
+const D={en:{banner:'Offline demo: accounts and students are stored in this browser only. No email is sent; messages appear in the Demo inbox below. Not for real school data.',login:'Log in',email:'Email',password:'Password',remember:'Remember me',forgot:'Forgot password?',register:'Create school account',name:'Full name',school:'School name',confirm:'Confirm password',terms:'I accept the terms and conditions',show:'Show',hide:'Hide',back:'Back to log in',send:'Send reset link',newpw:'Set new password',logout:'Log out',users:'Users',inbox:'Demo inbox',create:'Create user',role:'Role'},
+ur:{banner:'آف لائن ڈیمو: اکاؤنٹس صرف اسی براؤزر میں محفوظ ہیں۔ کوئی ای میل نہیں بھیجی جاتی؛ پیغامات نیچے ڈیمو ان باکس میں نظر آتے ہیں۔',login:'لاگ ان',email:'ای میل',password:'پاس ورڈ',remember:'مجھے یاد رکھیں',forgot:'پاس ورڈ بھول گئے؟',register:'سکول اکاؤنٹ بنائیں',name:'پورا نام',school:'سکول کا نام',confirm:'پاس ورڈ کی تصدیق',terms:'میں شرائط و ضوابط قبول کرتا ہوں',show:'دکھائیں',hide:'چھپائیں',back:'لاگ ان پر واپس',send:'ری سیٹ لنک بھیجیں',newpw:'نیا پاس ورڈ مقرر کریں',logout:'لاگ آؤٹ',users:'صارفین',inbox:'ڈیمو ان باکس',create:'صارف بنائیں',role:'کردار'}};
+let lang='en';const t=k=>D[lang][k]||k;
+const load=()=>{let d;try{d=JSON.parse(localStorage.getItem(K))}catch{}d=d||{users:[],tokens:[],inbox:[],fails:{}};d.students=d.students||[];d.meta=d.meta||{};return d};
+let db=load();const save=()=>localStorage.setItem(K,JSON.stringify(db));
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+const rnd=n=>hex(crypto.getRandomValues(new Uint8Array(n)));
+const sha=async s=>hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)));
+async function hashPw(p,salt){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(p),'PBKDF2',false,['deriveBits']);return hex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode(salt),iterations:150000},k,256))}
+const EM=/^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
+const pwOk=(p,c)=>{if(p.length<10||!/[A-Za-z]/.test(p)||!/\d/.test(p))throw Error('Password must be at least 10 characters with letters and digits.');if(p!==c)throw Error('Passwords do not match.')};
+async function mk(uid,kind,hrs){const tk=rnd(32);db.tokens=db.tokens.filter(x=>!(x.uid==uid&&x.kind==kind));db.tokens.push({h:await sha(tk),uid,kind,exp:Date.now()+hrs*36e5});return tk}
+async function use(tk,kind){const hh=await sha(String(tk||'')),i=db.tokens.findIndex(x=>x.h==hh&&x.kind==kind);if(i<0)return null;const r=db.tokens.splice(i,1)[0];save();return r.exp>Date.now()?r:null}
+const mail=(to,subject,body)=>{db.inbox.unshift({to,subject,body,at:new Date().toLocaleString()});save()};
+async function sendVerify(u){mail(u.email,'Verify your email',`Hello ${u.name}, open this link to verify (24 hours, single use):\n#verify=${await mk(u.id,'verify',24)}`)}
+async function sendReset(u,inv){mail(u.email,inv?'You have been invited':'Reset your password',`Hello ${u.name}, open this link to ${inv?'set':'reset'} your password (1 hour, single use):\n#reset=${await mk(u.id,'reset',1)}`)}
+const clr=()=>history.replaceState(null,'',location.pathname+location.search);let me=null;const session=()=>{const s=sessionStorage.getItem('sms_sid')||localStorage.getItem('sms_sid_rem');if(!s)return null;const [id,exp]=s.split(':');if(+exp<Date.now())return null;return db.users.find(u=>u.id==id&&u.active&&u.verified)||null};
+const msg=(el,m,ok)=>{el.className=ok?'ok':'err';el.textContent=m};
+async function go(b,out,fn){b.disabled=true;msg(out,'');try{await fn()}catch(e){msg(out,e.message)}finally{b.disabled=false}}
+const field=(l,id,a={})=>h('label',{},l,h('input',{id,...a}));
+const pwField=(id,l,ac)=>{const i=h('input',{id,type:'password',autocomplete:ac,required:''}),b=h('button',{type:'button',id:id+'-toggle',onclick:()=>{const s=i.type=='password';i.type=s?'text':'password';b.textContent=t(s?'hide':'show')}},t('show'));return h('label',{},l,h('span',{class:'pw'},i,b))};
+const v=id=>$('#'+id).value;
+function view(mode,note,token){
+ const out=h('div',{id:'auth-msg',role:'alert'}),L=(id,k,m)=>h('button',{type:'button',id,onclick:()=>{clr();draw(m)}},t(k));
+ const btn=(id,k)=>h('button',{class:'pri',id,type:'submit'},t(k));let body,links,title;
+ if(mode=='login'){title='login';const b=btn('login-btn','login');body=h('form',{onsubmit:e=>{e.preventDefault();go(b,out,async()=>{
+   const email=v('email').toLowerCase().trim(),f=db.fails[email]||{n:0,t:0};if(f.n>=5&&Date.now()-f.t<9e5)throw Error('Too many failed attempts. Try again in 15 minutes.');
+   const u=db.users.find(x=>x.email==email);if(!(u&&await hashPw(v('password'),u.salt)==u.pw)){db.fails[email]={n:(Date.now()-f.t<9e5?f.n:0)+1,t:Date.now()};save();throw Error('Invalid email or password.')}
+   if(!u.active)throw Error('This account is suspended.');if(!u.verified)throw Error('Please verify your email first. Open the link in the Demo inbox below.');
+   delete db.fails[email];u.last=new Date().toISOString();save();const rem=$('#remember').checked,s=u.id+':'+(Date.now()+(rem?30*864e5:432e5));sessionStorage.setItem('sms_sid',s);rem?localStorage.setItem('sms_sid_rem',s):localStorage.removeItem('sms_sid_rem');app()})}},
+   field(t('email'),'email',{type:'email',required:'',autocomplete:'username'}),pwField('password',t('password'),'current-password'),h('label',{class:'chk'},h('input',{type:'checkbox',id:'remember'}),t('remember')),b);links=[L('to-forgot','forgot','forgot'),L('to-register','register','register')]}
+ if(mode=='register'){title='register';const b=btn('reg-btn','register');body=h('form',{onsubmit:e=>{e.preventDefault();go(b,out,async()=>{
+   const name=v('r-name').trim(),email=v('r-email').toLowerCase().trim(),sn=v('r-school').trim();
+   if(name.length<2)throw Error('Enter your full name.');if(!EM.test(email))throw Error('Enter a valid email address.');if(sn.length<3)throw Error('School name must be at least 3 characters.');pwOk(v('r-pw'),v('r-pw2'));
+   if(db.users.some(x=>x.email==email))throw Error('An account with this email already exists.');
+   const salt=rnd(16),u={id:rnd(6),name,email,role:'school_admin',school:sn,salt,pw:await hashPw(v('r-pw'),salt),verified:false,active:true,created:new Date().toISOString(),last:null};db.users.push(u);save();await sendVerify(u);inbox();
+   msg(out,'Account created. A verification message is in the Demo inbox below (nothing was emailed). Open its link, then log in.',true)})}},
+   field(t('name'),'r-name',{required:''}),field(t('email'),'r-email',{type:'email',required:''}),field(t('school'),'r-school',{required:''}),pwField('r-pw',t('password'),'new-password'),pwField('r-pw2',t('confirm'),'new-password'),h('label',{class:'chk'},h('input',{type:'checkbox',id:'r-terms',required:''}),t('terms')),b);links=[L('to-login','back','login')]}
+ if(mode=='forgot'){title='forgot';const b=btn('fg-btn','send');body=h('form',{onsubmit:e=>{e.preventDefault();go(b,out,async()=>{const email=v('fg-email').toLowerCase().trim(),u=db.users.find(x=>x.email==email&&x.active);if(u)await sendReset(u);inbox();msg(out,'If an account exists for that email, a message was placed in the Demo inbox (nothing was emailed).',true)})}},field(t('email'),'fg-email',{type:'email',required:''}),b);links=[L('to-login','back','login')]}
+ if(mode=='reset'){title='newpw';const b=btn('rp-btn','newpw');body=h('form',{onsubmit:e=>{e.preventDefault();go(b,out,async()=>{pwOk(v('rp-pw'),v('rp-pw2'));const r=await use(token,'reset');if(!r)throw Error('This reset link is invalid or has expired.');
+   const u=db.users.find(x=>x.id==r.uid);u.salt=rnd(16);u.pw=await hashPw(v('rp-pw'),u.salt);u.verified=true;localStorage.removeItem('sms_sid_rem');save();clr();draw('login','Password updated. Please log in.')})}},pwField('rp-pw',t('newpw'),'new-password'),pwField('rp-pw2',t('confirm'),'new-password'),b);links=[L('to-login','back','login')]}
+ if(mode=='verify'){title='login';body=h('p',{});links=[L('to-login','back','login')];use(token,'verify').then(r=>{if(r){db.users.find(x=>x.id==r.uid).verified=true;save();msg(out,'Email verified. You can now log in.',true)}else msg(out,'This verification link is invalid or has expired.')})}
+ if(note)msg(out,note,true);
+ return h('div',{class:'wrap'},h('h1',{},t(title)),h('div',{class:'card'},body,out),h('div',{class:'links'},links))}
+function inbox(){const e=$('#inbox');if(!e)return;e.replaceChildren(h('h3',{},t('inbox')),...(db.inbox.length?db.inbox.map(m=>{const mt=m.body.match(/#(verify|reset)=[a-f0-9]{64}/);return h('div',{class:'mail'},`To: ${m.to}\n${m.subject}\n`,m.body.split('\n')[0],mt?h('div',{},h('a',{class:'mail-link',onclick:()=>{location.hash=mt[0].slice(1)}},'Open link')):null)}):[h('p',{style:'color:var(--mute)'},'No messages yet.')]))}
+function draw(mode,note,token){me=null;$('#root').replaceChildren(view(mode,note,token),h('div',{class:'wrap',style:'margin-top:0'},h('div',{class:'card',id:'inbox'})));inbox()}
+function app(){me=session();if(!me)return draw('login');const admin=me.role=='school_admin';
+ const rows=h('tbody'),out=h('div',{id:'u-msg',role:'alert'});
+ const paint=()=>rows.replaceChildren(...db.users.filter(u=>u.school==me.school).map(u=>{const self=u.id==me.id,b=(c,l,f)=>h('button',{class:c,onclick:async()=>{try{await f();save();paint();inbox()}catch(e){msg(out,e.message)}}},l);
+  return h('tr',{'data-email':u.email},h('td',{},u.name),h('td',{},u.email),h('td',{},self?u.role:h('select',{class:'rolesel','aria-label':'role',onchange:e=>{u.role=e.target.value;save();msg(out,'Role updated',true)}},...['school_admin','teacher','accountant','parent','student'].map(r=>h('option',{value:r,selected:r==u.role?'':null},r)))),
+   h('td',{class:'ver'},u.verified?'Verified':'Pending'),h('td',{class:'st'},u.active?'Active':'Suspended'),h('td',{},u.last?u.last.slice(0,16).replace('T',' '):'Never'),h('td',{},u.created.slice(0,10)),
+   h('td',{},h('span',{class:'row'},self?null:b('u-toggle',u.active?'Suspend':'Activate',async()=>{u.active=!u.active}),u.verified?null:b('u-verify','Resend verification',()=>sendVerify(u)),b('u-reset','Send reset',()=>sendReset(u)))))}));
+ const cn=field(t('name'),'cu-name'),ce=field(t('email'),'cu-email',{type:'email'}),cr=h('select',{id:'cu-role'},...['teacher','accountant','parent','student','school_admin'].map(r=>h('option',{value:r},r)));
+ const cb=h('button',{class:'pri',id:'cu-create',onclick:async()=>{try{const name=cn.lastChild.value.trim(),email=ce.lastChild.value.toLowerCase().trim();if(name.length<2)throw Error('Enter the full name.');if(!EM.test(email))throw Error('Enter a valid email address.');if(db.users.some(x=>x.email==email))throw Error('An account with this email already exists.');
+   const salt=rnd(16),u={id:rnd(6),name,email,role:cr.value,school:me.school,salt,pw:await hashPw(rnd(24),salt),verified:false,active:true,created:new Date().toISOString(),last:null};db.users.push(u);await sendReset(u,true);save();cn.lastChild.value=ce.lastChild.value='';paint();inbox();msg(out,'User created. Invite placed in the Demo inbox.',true)}catch(e){msg(out,e.message)}}},t('create'));
+ paint();$('#root').replaceChildren(h('div',{class:'app'},h('div',{class:'bar'},h('b',{id:'school'},me.school),h('span',{id:'who'},`${me.name} (${me.role})`),h('button',{id:'logout',onclick:()=>{sessionStorage.removeItem('sms_sid');localStorage.removeItem('sms_sid_rem');draw('login')}},t('logout'))),
+  admin?h('div',{class:'card'},h('h3',{},t('users')),h('div',{class:'row'},cn,ce,h('label',{},t('role'),cr),cb),out,h('div',{class:'tw'},h('table',{id:'users'},h('thead',{},h('tr',{},...['Name','Email','Role','Email status','Status','Last login','Created',''].map(x=>h('th',{},x)))),rows))):h('div',{class:'card',id:'home'},`Signed in as ${me.role}. Portal pages are not part of this demo.`),
+  ...(admin?tools():[]),h('div',{class:'card',id:'inbox'})));inbox()}
+
+const b64=a=>{let x='';for(const c of new Uint8Array(a))x+=String.fromCharCode(c);return btoa(x)},ub64=x=>Uint8Array.from(atob(x),c=>c.charCodeAt(0));
+async function aesKey(pass,salt){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations:150000},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function seal(obj,pass){const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},await aesKey(pass,salt),new TextEncoder().encode(JSON.stringify(obj)));return JSON.stringify({fmt:'SMSB-offline-1',salt:b64(salt),iv:b64(iv),data:b64(ct)})}
+async function unseal(text,pass){try{const f=JSON.parse(text);if(f.fmt!='SMSB-offline-1')throw 0;return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(f.iv)},await aesKey(pass,ub64(f.salt)),ub64(f.data))))}catch{throw Error('Integrity check failed: wrong passphrase, or the file is damaged or is not a backup made by this app.')}}
+const dlText=(name,text)=>{const a=h('a',{href:URL.createObjectURL(new Blob([text],{type:'application/octet-stream'})),download:name});document.body.append(a);a.click();a.remove()};
+const snap=sch=>({v:1,school:sch,at:new Date().toISOString(),users:db.users.filter(u=>u.school==sch),students:db.students.filter(s=>s.school==sch)});
+const cnt=o=>`${o.users.length} users, ${o.students.length} students`;
+function normStudents(inp){let arr=null;if(inp&&Array.isArray(inp.students))arr=inp.students;else if(Array.isArray(inp))arr=inp;else if(inp&&typeof inp=='object')for(const k of Object.keys(inp))if(/student/i.test(k)){let v=inp[k];if(typeof v=='string'){try{v=JSON.parse(v)}catch{continue}}if(Array.isArray(v)){arr=v;break}}
+ if(!arr)throw Error('No student list found. Expected {"students":[...]} or a browser-storage dump with a "students" key.');
+ const pick=(o,ks)=>{for(const k of ks)if(o[k]!=null&&String(o[k]).trim()!=='')return String(o[k]).trim()},valid=[],bad=[];
+ arr.forEach((o,i)=>{if(!o||typeof o!='object'){bad.push(`Row ${i+1}: not a record`);return}const r={adm:(pick(o,['adm','adm_no','admission_no','admissionNo','rollNo','id'])||'').replace(/\s+/g,'-'),name:pick(o,['name','fullName','studentName'])||'',class:pick(o,['class','className','grade'])||''};
+  if(!/^[A-Za-z0-9-]{3,20}$/.test(r.adm))bad.push(`Row ${i+1}: invalid admission number`);else if(r.name.length<2||!r.class)bad.push(`Row ${i+1}: name and class are required`);else valid.push(r)});return{valid,bad}}
+function tools(){const sch=me.school,fld=(l,id,a)=>field(l,id,a),sm=h('div',{id:'st-msg',role:'alert'}),body=h('tbody');
+ const paint=()=>body.replaceChildren(...db.students.filter(x=>x.school==sch).map(x=>h('tr',{'data-adm':x.adm},h('td',{},x.adm),h('td',{},x.name),h('td',{},x.class))));
+ const a=fld('Admission no.','st-adm'),n=fld('Name','st-name'),c=fld('Class','st-class');
+ const add=h('button',{class:'pri',id:'st-add',onclick:()=>{try{const adm=a.lastChild.value.trim(),name=n.lastChild.value.trim(),cl=c.lastChild.value.trim();if(!/^[A-Za-z0-9-]{3,20}$/.test(adm))throw Error('Admission number must be 3 to 20 letters, digits or hyphens.');if(name.length<2||!cl)throw Error('Name and class are required.');if(db.students.some(x=>x.school==sch&&x.adm==adm))throw Error('Admission number already exists.');db.students.push({school:sch,adm,name,class:cl});save();a.lastChild.value=n.lastChild.value=c.lastChild.value='';paint();msg(sm,'Student saved',true)}catch(e){msg(sm,e.message)}}},'Add student');
+ paint();const stCard=h('div',{class:'card',id:'students'},h('h3',{},'Students'),h('div',{class:'row'},a,n,c,add),sm,h('div',{class:'tw'},h('table',{},h('thead',{},h('tr',{},...['Admission no.','Name','Class'].map(x=>h('th',{},x)))),body)));
+ // backup
+ const last=db.meta[sch]&&db.meta[sch].last_backup,bm=h('div',{id:'bk-msg',role:'alert'}),bp=pwField('bk-pass','Backup passphrase (10+ characters; keep it safe, it cannot be recovered)','off');
+ const old=!last||Date.now()-new Date(last)>7*864e5;
+ const lastP=h('p',{id:'bk-last',class:old?'err':'ok'},last?`Last backup: ${last.slice(0,19).replace('T',' ')} UTC${old?' (OVERDUE: more than 7 days)':''}`:'No backup has been made yet.');
+ const mk=h('button',{class:'pri',id:'bk-create',onclick:async()=>{try{const pass=$('#bk-pass').value;if(pass.length<10)throw Error('Use a passphrase of at least 10 characters.');const o=snap(sch),text=await seal(o,pass);await unseal(text,pass);dlText(`backup-${sch.replace(/\W+/g,'_')}-${o.at.slice(0,10)}.smsbak`,text);db.meta[sch]={last_backup:o.at};save();lastP.className='ok';lastP.textContent='Last backup: '+o.at.slice(0,19).replace('T',' ')+' UTC';msg(bm,`Backup file downloaded and verified (${cnt(o)}). Store it somewhere other than this browser.`,true)}catch(e){msg(bm,e.message)}}},'Create encrypted backup');
+ let loaded=null;const rf=h('input',{id:'rs-file',type:'file',accept:'.smsbak'}),rp=pwField('rs-pass','Passphrase of that backup','off'),ri=h('div',{id:'rs-info',role:'alert'}),rpw=pwField('rs-pw','Your account password (re-authentication)','current-password'),rc=field('Type RESTORE to confirm','rs-confirm'),rm=h('div',{id:'rs-msg',role:'alert'}),box=h('div',{style:'display:none',id:'rs-box'});
+ const prev=h('button',{id:'rs-preview',onclick:async()=>{try{loaded=null;box.style.display='none';const f=rf.files[0];if(!f)throw Error('Choose a backup file first.');const o=await unseal(await f.text(),$('#rs-pass').value);if(o.school!==sch||!Array.isArray(o.users)||!Array.isArray(o.students))throw Error('This backup belongs to a different school or has an invalid structure.');if(!o.users.some(u=>u.id==me.id))throw Error('This backup does not contain your own account, so restoring it would lock you out.');loaded=o;msg(ri,`Integrity OK. Backup from ${o.at.slice(0,19).replace('T',' ')} UTC contains ${cnt(o)}. Current data: ${cnt(snap(sch))}.`,true);box.style.display='block'}catch(e){msg(ri,e.message)}}},'Check backup and preview');
+ const go=h('button',{class:'pri',id:'rs-go',onclick:async()=>{try{if(!loaded)throw Error('Preview a backup first.');if(await hashPw($('#rs-pw').value,me.salt)!==me.pw)throw Error('Re-authentication failed: wrong password.');if($('#rs-confirm').value!=='RESTORE')throw Error('Type RESTORE to confirm.');
+   const pass=$('#rs-pass').value,safety=await seal(snap(sch),pass);dlText(`safety-before-restore-${Date.now()}.smsbak`,safety);
+   const before={users:db.users.slice(),students:db.students.slice()};try{db.users=db.users.filter(u=>u.school!=sch).concat(loaded.users);db.students=db.students.filter(x=>x.school!=sch).concat(loaded.students);if(cnt(snap(sch))!==cnt(loaded))throw Error('mismatch');save()}catch{db.users=before.users;db.students=before.students;throw Error('Restore failed; nothing was changed.')}
+   me=session();if(!me){draw('login','Restore finished. Please log in again.');return}app();setTimeout(()=>{const m=$('#bk-msg');if(m)msg(m,`Restore complete (${cnt(loaded)}). A safety backup of the previous data was downloaded.`,true)},0)}catch(e){msg(rm,e.message)}}},'Restore now');
+ box.append(h('p',{class:'err'},'WARNING: this REPLACES all users and students of your school with the backup. A safety backup of the current data is downloaded first.'),rpw,rc,go,rm);
+ const bkCard=h('div',{class:'card',id:'backup'},h('h3',{},'Backup & Recovery'),h('p',{},'A single HTML file cannot back itself up automatically when the page is closed. Create a backup file regularly and keep copies off this computer.'),lastP,bp,mk,bm,h('hr',{style:'border-color:var(--line)'}),h('h4',{},'Restore from a backup file'),h('label',{},'Backup file',rf),rp,prev,ri,box);
+ // import old browser data
+ let mdata=null;const mi=h('p',{id:'mg-info'}),mo=h('div',{id:'mg-out'}),mprev=h('button',{id:'mg-preview',disabled:'',onclick:()=>{try{const {valid,bad}=normStudents(mdata),have=new Set(db.students.filter(x=>x.school==sch).map(x=>x.adm));let d=0,nw=0,seen=new Set();for(const r of valid){if(have.has(r.adm)||seen.has(r.adm))d++;else{nw++;seen.add(r.adm)}}msg(mo,`${valid.length+bad.length} records: ${nw} will be imported, ${d} duplicates skipped, ${bad.length} invalid. ${bad.slice(0,5).join('; ')}`,true);mimp.disabled=!nw}catch(e){msg(mo,e.message)}}},'Preview'),
+  mimp=h('button',{class:'pri',id:'mg-import',disabled:'',onclick:()=>{try{const {valid,bad}=normStudents(mdata);let im=0,sk=0;for(const r of valid){if(db.students.some(x=>x.school==sch&&x.adm==r.adm)){sk++;continue}db.students.push({school:sch,...r});im++}save();paint();mimp.disabled=true;msg(mo,`Import report: ${im} imported, ${sk} skipped as duplicates, ${bad.length} failed. Your old browser data was NOT deleted; remove it yourself after checking the Students list.`,true)}catch(e){msg(mo,e.message)}}},'Import'),
+  mscan=h('button',{id:'mg-scan',onclick:()=>{const d={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(![K,'sms_sid_rem'].includes(k))d[k]=localStorage.getItem(k)}const ks=Object.keys(d);if(!ks.length){mi.textContent='No other data found in this browser for this file. Data saved by a different web address cannot be read here.';return}mdata=d;mi.textContent='Found keys: '+ks.join(', ');mprev.disabled=false;mimp.disabled=true},},'Scan this browser for old data'),
+  mfile=h('input',{id:'mg-file',type:'file',accept:'.json',onchange:async e=>{try{mdata=JSON.parse(await e.target.files[0].text());mi.textContent='Loaded '+e.target.files[0].name;mprev.disabled=false;mimp.disabled=true}catch{mi.textContent='That file is not valid JSON.'}}});
+ const migCard=h('div',{class:'card',id:'mg'},h('h3',{},'Recover old browser data'),h('p',{},'Never overwrites existing students; duplicates are skipped; browser data is never deleted. Students only.'),h('div',{class:'row'},mscan,h('label',{},'or choose a JSON file',mfile),mprev,mimp),mi,mo);
+ return[stCard,bkCard,migCard]}
+function route(){const m=location.hash.match(/^#(verify|reset)=([a-f0-9]{64})$/);if(m){db=load();return draw(m[1],null,m[2])}app()}
+function chrome(){document.documentElement.lang=lang;document.documentElement.dir=lang=='ur'?'rtl':'ltr';$('#banner').textContent=t('banner');$('#lang').textContent=lang=='en'?'اردو':'English'}
+$('#lang').onclick=()=>{lang=lang=='en'?'ur':'en';chrome();route()};
+addEventListener('hashchange',route);chrome();route();
+</script>
+</body>
+</html>
